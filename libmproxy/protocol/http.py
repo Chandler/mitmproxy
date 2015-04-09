@@ -13,6 +13,7 @@ from .tcp import TCPHandler
 from .primitives import KILL, ProtocolHandler, Flow, Error
 from ..proxy.connection import ServerConnection
 from .. import encoding, utils, controller, stateobject, proxy
+from ..protocol.handle import protocol_handler
 
 HDR_FORM_URLENCODED = "application/x-www-form-urlencoded"
 HDR_FORM_MULTIPART = "multipart/form-data"
@@ -430,9 +431,7 @@ class HTTPRequest(HTTPMessage):
     # We probably don't need to strip off keep-alive.
     _headers_to_strip_off = ['Proxy-Connection',
                              'Keep-Alive',
-                             'Connection',
-                             'Transfer-Encoding',
-                             'Upgrade']
+                             'Transfer-Encoding']
 
     def _assemble_headers(self):
         headers = self.headers.copy()
@@ -1104,6 +1103,22 @@ class HTTPHandler(ProtocolHandler):
                 raise KillSignal()
 
             self.send_response_to_client(flow)
+
+            upgrade_protocol = http.is_successful_upgrade(flow.request, flow.response)
+
+            if upgrade_protocol is not None:
+                # the HTTP upgrade request was successful, this means
+                # we need to switch protocols. At this point we will
+                # hand over message processing to the new protocol handler.
+                # and then return False because httpHandler does not need to do any more
+                # work for this connection.
+                try:
+                    protocol_handler(upgrade_protocol)(self.c).handle_messages()
+                    return False
+                except NotImplementedError:
+                    # the server/client agreed to upgrade to a protocol that MITM does not support
+                    # continue to handle this connection with the httpHandler
+                    pass
 
             if self.check_close_connection(flow):
                 return False
