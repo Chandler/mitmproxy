@@ -13,7 +13,7 @@ from .tcp import TCPHandler
 from .primitives import KILL, ProtocolHandler, Flow, Error
 from ..proxy.connection import ServerConnection
 from .. import encoding, utils, controller, stateobject, proxy
-from ..protocol.handle import protocol_handler
+
 
 HDR_FORM_URLENCODED = "application/x-www-form-urlencoded"
 HDR_FORM_MULTIPART = "multipart/form-data"
@@ -1521,3 +1521,6 @@ class RequestReplayThread(threading.Thread):
             self.channel.tell("log", proxy.Log("Connection killed", "info"))
         finally:
             r.form_out = form_out_backup
+
+# address circular import
+from .handle import protocol_handler

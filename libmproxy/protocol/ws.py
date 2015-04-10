@@ -34,7 +34,7 @@ class WebSocketsHandler(ProtocolHandler):
                         dst_str, src_str = "client", "server"
 
                     closed = False
-           
+
                     size = src.connection.recv_into(buf)
                     if not size:
                         closed = True
