@@ -15,8 +15,8 @@ import urwid
 import weakref
 
 from .. import controller, flow, script
-from . import flowlist, flowview, help, window, signals
-from . import grideditor, palettes, contentview, statusbar
+from . import flowlist, flowview, help, window, signals, options
+from . import grideditor, palettes, contentview, statusbar, palettepicker
 
 EVENTLOG_SIZE = 500
 
@@ -116,6 +116,7 @@ class Options(object):
         "keepserving",
         "kill",
         "intercept",
+        "limit",
         "no_server",
         "refresh_server_playback",
         "rfile",
@@ -132,6 +133,7 @@ class Options(object):
         "wfile",
         "nopop",
         "palette",
+        "palette_transparent"
     ]
 
     def __init__(self, **kwargs):
@@ -156,13 +158,13 @@ class ConsoleMaster(flow.FlowMaster):
         for i in options.setheaders:
             self.setheaders.add(*i)
 
-        self.flow_list_walker = None
-        self.set_palette(options.palette)
-
         r = self.set_intercept(options.intercept)
         if r:
             print >> sys.stderr, "Intercept error:", r
             sys.exit(1)
+
+        if options.limit:
+            self.set_limit(options.limit)
 
         r = self.set_stickycookie(options.stickycookie)
         if r:
@@ -183,6 +185,8 @@ class ConsoleMaster(flow.FlowMaster):
         self.rheaders = options.rheaders
         self.nopop = options.nopop
         self.showhost = options.showhost
+        self.palette = options.palette
+        self.palette_transparent = options.palette_transparent
 
         self.eventlog = options.eventlog
         self.eventlist = urwid.SimpleListWalker([])
@@ -227,8 +231,9 @@ class ConsoleMaster(flow.FlowMaster):
         self.loop.set_alarm_in(seconds, cb)
 
     def sig_pop_view_state(self, sender):
-        if self.view_stack:
-            self.loop.widget = self.view_stack.pop()
+        if len(self.view_stack) > 1:
+            self.view_stack.pop()
+            self.loop.widget = self.view_stack[-1]
         else:
             signals.status_prompt_onekey.send(
                 self,
@@ -240,8 +245,10 @@ class ConsoleMaster(flow.FlowMaster):
                 callback = self.quit,
             )
 
-    def sig_push_view_state(self, sender):
-        self.view_stack.append(self.loop.widget)
+    def sig_push_view_state(self, sender, window):
+        self.view_stack.append(window)
+        self.loop.widget = window
+        self.loop.draw_screen()
 
     def start_stream_to_path(self, path, mode="wb"):
         path = os.path.expanduser(path)
@@ -391,7 +398,11 @@ class ConsoleMaster(flow.FlowMaster):
         os.unlink(name)
 
     def set_palette(self, name):
-        self.palette = palettes.palettes[name]
+        self.palette = name
+        self.ui.register_palette(
+            palettes.palettes[name].palette(self.palette_transparent)
+        )
+        self.ui.clear()
 
     def ticker(self, *userdata):
         changed = self.tick(self.masterq, timeout=0)
@@ -403,8 +414,7 @@ class ConsoleMaster(flow.FlowMaster):
     def run(self):
         self.ui = urwid.raw_display.Screen()
         self.ui.set_terminal_properties(256)
-        self.ui.register_palette(self.palette.palette())
-        self.flow_list_walker = flowlist.FlowListWalker(self, self.state)
+        self.set_palette(self.palette)
         self.loop = urwid.MainLoop(
             urwid.SolidFill("x"),
             screen = self.ui,
@@ -456,23 +466,54 @@ class ConsoleMaster(flow.FlowMaster):
         self.shutdown()
 
     def view_help(self, helpctx):
-        signals.push_view_state.send(self)
-        self.loop.widget = window.Window(
+        signals.push_view_state.send(
             self,
-            help.HelpView(helpctx),
-            None,
-            statusbar.StatusBar(self, help.footer),
-            None
+            window = window.Window(
+                self,
+                help.HelpView(helpctx),
+                None,
+                statusbar.StatusBar(self, help.footer),
+                None
+            )
+        )
+
+    def view_options(self):
+        for i in self.view_stack:
+            if isinstance(i["body"], options.Options):
+                return
+        signals.push_view_state.send(
+            self,
+            window = window.Window(
+                self,
+                options.Options(self),
+                None,
+                statusbar.StatusBar(self, options.footer),
+                options.help_context,
+            )
+        )
+
+    def view_palette_picker(self):
+        signals.push_view_state.send(
+            self,
+            window = window.Window(
+                self,
+                palettepicker.PalettePicker(self),
+                None,
+                statusbar.StatusBar(self, palettepicker.footer),
+                palettepicker.help_context,
+            )
         )
 
     def view_grideditor(self, ge):
-        signals.push_view_state.send(self)
-        self.loop.widget = window.Window(
+        signals.push_view_state.send(
             self,
-            ge,
-            None,
-            statusbar.StatusBar(self, grideditor.FOOTER),
-            ge.make_help()
+            window = window.Window(
+                self,
+                ge,
+                None,
+                statusbar.StatusBar(self, grideditor.FOOTER),
+                ge.make_help()
+            )
         )
 
     def view_flowlist(self):
@@ -486,24 +527,28 @@ class ConsoleMaster(flow.FlowMaster):
         else:
             body = flowlist.FlowListBox(self)
 
-        self.loop.widget = window.Window(
+        signals.push_view_state.send(
             self,
-            body,
-            None,
-            statusbar.StatusBar(self, flowlist.footer),
-            flowlist.help_context
+            window = window.Window(
+                self,
+                body,
+                None,
+                statusbar.StatusBar(self, flowlist.footer),
+                flowlist.help_context
+            )
         )
-        self.loop.draw_screen()
 
     def view_flow(self, flow, tab_offset=0):
-        signals.push_view_state.send(self)
         self.state.set_focus_flow(flow)
-        self.loop.widget = window.Window(
+        signals.push_view_state.send(
             self,
-            flowview.FlowView(self, self.state, flow, tab_offset),
-            flowview.FlowViewHeader(self, flow),
-            statusbar.StatusBar(self, flowview.footer),
-            flowview.help_context
+            window = window.Window(
+                self,
+                flowview.FlowView(self, self.state, flow, tab_offset),
+                flowview.FlowViewHeader(self, flow),
+                statusbar.StatusBar(self, flowview.footer),
+                flowview.help_context
+            )
         )
 
     def _write_flows(self, path, flows):
@@ -537,8 +582,7 @@ class ConsoleMaster(flow.FlowMaster):
             flow.FlowMaster.load_flows_file(self, path)
         except flow.FlowReadError, v:
             reterr = str(v)
-        if self.flow_list_walker:
-            self.sync_list_view()
+        signals.flowlist_change.send(self)
         return reterr
 
     def accept_all(self):
@@ -546,7 +590,7 @@ class ConsoleMaster(flow.FlowMaster):
 
     def set_limit(self, txt):
         v = self.state.set_limit(txt)
-        self.sync_list_view()
+        signals.flowlist_change.send(self)
         return v
 
     def set_intercept(self, txt):
@@ -565,14 +609,7 @@ class ConsoleMaster(flow.FlowMaster):
         self.unload_scripts()
         for command in commands:
             self.load_script(command)
-
-    def edit_ignore_filter(self, ignore):
-        patterns = (x[0] for x in ignore)
-        self.set_ignore_filter(patterns)
-
-    def edit_tcp_filter(self, tcp):
-        patterns = (x[0] for x in tcp)
-        self.set_tcp_filter(patterns)
+        signals.update_settings.send(self)
 
     def stop_client_playback_prompt(self, a):
         if a != "n":
@@ -586,35 +623,13 @@ class ConsoleMaster(flow.FlowMaster):
         if a != "n":
             raise urwid.ExitMainLoop
 
-    def _change_options(self, a):
-        if a == "a":
-            self.anticache = not self.anticache
-        if a == "c":
-            self.anticomp = not self.anticomp
-        if a == "h":
-            self.showhost = not self.showhost
-            self.sync_list_view()
-            self.refresh_focus()
-        elif a == "k":
-            self.killextra = not self.killextra
-        elif a == "n":
-            self.refresh_server_playback = not self.refresh_server_playback
-        elif a == "u":
-            self.server.config.no_upstream_cert =\
-                not self.server.config.no_upstream_cert
-            signals.update_settings.send(self)
-
     def shutdown(self):
         self.state.killall(self)
         flow.FlowMaster.shutdown(self)
 
-    def sync_list_view(self):
-        self.flow_list_walker._modified()
-        signals.update_settings.send(self)
-
     def clear_flows(self):
         self.state.clear()
-        self.sync_list_view()
+        signals.flowlist_change.send(self)
 
     def toggle_follow_flows(self):
         # toggle flow follow
@@ -622,11 +637,11 @@ class ConsoleMaster(flow.FlowMaster):
         # jump to most recent flow if follow is now on
         if self.state.follow_focus:
             self.state.set_focus(self.state.flow_count())
-            self.sync_list_view()
+            signals.flowlist_change.send(self)
 
     def delete_flow(self, f):
         self.state.delete_flow(f)
-        self.sync_list_view()
+        signals.flowlist_change.send(self)
 
     def refresh_focus(self):
         if self.state.view:
@@ -640,7 +655,7 @@ class ConsoleMaster(flow.FlowMaster):
             f.intercept(self)
         else:
             f.reply()
-        self.sync_list_view()
+        signals.flowlist_change.send(self)
         signals.flow_change.send(self, flow = f)
 
     def clear_events(self):

@@ -11,10 +11,12 @@ def test_load_scripts():
     tmaster = tservers.TestMaster(config.ProxyConfig())
 
     for f in scripts:
-        if "har_extractor" in f:
+        if "har_extractor" in f or "flowwriter" in f:
             f += " -"
         if "iframe_injector" in f:
             f += " foo"  # one argument required
+        if "filt" in f:
+            f += " ~a"
         if "modify_response_body" in f:
             f += " foo bar"  # two arguments required
         try:

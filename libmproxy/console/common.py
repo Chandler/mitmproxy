@@ -37,14 +37,14 @@ def is_keypress(k):
         return True
 
 
-def highlight_key(s, k):
+def highlight_key(str, key, textattr="text", keyattr="key"):
     l = []
-    parts = s.split(k, 1)
+    parts = str.split(key, 1)
     if parts[0]:
-        l.append(("text", parts[0]))
-    l.append(("key", k))
+        l.append((textattr, parts[0]))
+    l.append((keyattr, key))
     if parts[1]:
-        l.append(("text", parts[1]))
+        l.append((textattr, parts[1]))
     return l
 
 
@@ -66,20 +66,26 @@ def format_keyvals(lst, key="key", val="text", indent=0):
             if kv is None:
                 ret.append(urwid.Text(""))
             else:
-                cols = []
-                # This cumbersome construction process is here for a reason:
-                # Urwid < 1.0 barfs if given a fixed size column of size zero.
-                if indent:
-                    cols.append(("fixed", indent, urwid.Text("")))
-                cols.extend([
-                    (
-                        "fixed",
-                        maxk,
-                        urwid.Text([(key, kv[0] or "")])
-                    ),
-                    kv[1] if isinstance(kv[1], urwid.Widget) else urwid.Text([(val, kv[1])])
-               ])
-                ret.append(urwid.Columns(cols, dividechars = 2))
+                if isinstance(kv[1], urwid.Widget):
+                    v = kv[1]
+                elif kv[1] is None:
+                    v = urwid.Text("")
+                else:
+                    v = urwid.Text([(val, kv[1])])
+                ret.append(
+                    urwid.Columns(
+                        [
+                            ("fixed", indent, urwid.Text("")),
+                            (
+                                "fixed",
+                                maxk,
+                                urwid.Text([(key, kv[0] or "")])
+                            ),
+                            v
+                        ],
+                        dividechars = 2
+                    )
+                )
     return ret
 
 

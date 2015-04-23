@@ -17,9 +17,6 @@ from .proxy.config import HostMatcher
 from .proxy.connection import ClientConnection, ServerConnection
 import urlparse
 
-ODict = odict.ODict
-ODictCaseless = odict.ODictCaseless
-
 
 class AppRegistry:
     def __init__(self):
@@ -232,7 +229,7 @@ class ServerPlaybackState:
         r = flow.request
 
         _, _, path, _, query, _ = urlparse.urlparse(r.url)
-        queriesArray = urlparse.parse_qsl(query)
+        queriesArray = urlparse.parse_qsl(query, keep_blank_values=True)
 
         key = [
             str(r.port),
@@ -271,7 +268,7 @@ class ServerPlaybackState:
                 # to prevent a mismatch between unicode/non-unicode.
                 v = [str(x) for x in v]
                 hdrs.append((i, v))
-            key.append(repr(hdrs))
+            key.append(hdrs)
         return hashlib.sha256(repr(key)).digest()
 
     def next_flow(self, request):
@@ -736,7 +733,7 @@ class FlowMaster(controller.Master):
             ignore_payload_params: list of content params to ignore in server replay
             ignore_host: true if request host should be ignored in server replay
         """
-        self.server_playback = ServerPlaybackState(headers, flows, exit, nopop, 
+        self.server_playback = ServerPlaybackState(headers, flows, exit, nopop,
                                                    ignore_params, ignore_content,
                                                    ignore_payload_params, ignore_host)
         self.kill_nonreplay = kill
@@ -786,7 +783,7 @@ class FlowMaster(controller.Master):
     def create_request(self, method, scheme, host, port, path):
         """
             this method creates a new artificial and minimalist request also adds it to flowlist
-        """        
+        """
         c = ClientConnection.from_state(dict(
                 address=dict(address=(host, port), use_ipv6=False),
                 clientcert=None
@@ -802,7 +799,7 @@ class FlowMaster(controller.Master):
             ))
         f = http.HTTPFlow(c,s);
         headers = ODictCaseless()
-        
+
         req = http.HTTPRequest("absolute", method, scheme, host, port, path, (1, 1), headers, None,
                                  None, None, None)
         f.request = req
