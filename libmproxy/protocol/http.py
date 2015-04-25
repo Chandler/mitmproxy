@@ -1087,8 +1087,10 @@ class HTTPHandler(ProtocolHandler):
                 raise KillSignal()
 
             self.send_response_to_client(flow)
+           
 
-            upgrade_protocol = http.is_successful_upgrade(flow.request, flow.response)
+            upgrade_protocol = is_successful_upgrade(flow.request, flow.response)
+            # import pdb; pdb.set_trace()
 
             if upgrade_protocol is not None:
                 # the HTTP upgrade request was successful, this means
@@ -1530,6 +1532,22 @@ class RequestReplayThread(threading.Thread):
             self.channel.tell("log", proxy.Log("Connection killed", "info"))
         finally:
             r.form_out = form_out_backup
+
+
+def is_successful_upgrade(request, response):
+    """
+        determines if a client and server successfully agreed to an HTTP protocol upgrade
+
+        https://developer.mozilla.org/en-US/docs/Web/HTTP/Protocol_upgrade_mechanism
+    """
+    http_switching_protocols_code = 101
+    
+    if request and response:
+        responseUpgrade = request.headers.get("Upgrade")
+        requestUpgrade  = response.headers.get("Upgrade")
+        if response.code == http_switching_protocols_code and responseUpgrade == requestUpgrade:
+            return requestUpgrade[0] if len(requestUpgrade) > 0 else None
+    return None
 
 # address circular import
 from .handle import protocol_handler

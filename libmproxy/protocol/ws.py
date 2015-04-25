@@ -5,7 +5,7 @@ from .primitives import ProtocolHandler, Flow
 from netlib.utils import cleanBin
 from netlib.tcp import NetLibError
 from . import http
-from netlib.websockets import websockets as ws
+from netlib import websockets
 
 class WebSocketsConnectionFlow(Flow):
     """
@@ -31,9 +31,9 @@ class WebSocketsConnectionFlow(Flow):
         )
 
 
-class WebSocketsFrameFlow(Flow):
+class WSFrame(object):
     """
-        A type of flow which enacapsulates a single WebSockets frame
+        enacapsulates a single WebSockets frame
         optionally contains a reference to WebSocketsConnectionFlow corresponding
         to the connection this frame was sent over. 
     """
@@ -100,10 +100,11 @@ class WebSocketsHandler(ProtocolHandler):
 
                     # take the bytes and construct a websockets frame and frame_flow
                     frame_bytes = buf[:size].tobytes()
+
                     # try:
-                    frame       = ws.WebSocketsFrame.from_bytes(frame_bytes)
-                    frame_flow  = WebSocketsFrameFlow(frame, conn_flow)
-                    self.c.log(frame, "info")
+                    frame       = websockets.Frame.from_bytes(frame_bytes)
+                    frame_flow  = WSFrame(frame, conn_flow)
+                    self.c.log(frame.human_readable(), "info")
 
                     # send flows to flowmaster
                     self.c.channel.tell("websockets_connection", conn_flow)
